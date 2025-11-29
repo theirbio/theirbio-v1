@@ -7,11 +7,11 @@ import { DurableObject } from "cloudflare:workers";
 import type { Context } from "hono";
 
 export interface Env {
-  GlobalDurableObject: DurableObjectNamespace<GlobalDurableObject>;
+    GlobalDurableObject: DurableObjectNamespace<GlobalDurableObject>;
+    DB: D1Database;
 }
 
 type Doc<T> = { v: number; data: T };
-
 /**
  * Global Durable object for storage-purpose ONLY, to be used as a KV-like storage by multiple entities
  */
