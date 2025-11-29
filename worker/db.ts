@@ -104,34 +104,42 @@ export class D1UserStore {
     }
 
     async updateProfile(userId: string, profileData: Partial<Profile>): Promise<void> {
-        const updates: string[] = [];
-        const params: any[] = [];
+        try {
+            const updates: string[] = [];
+            const params: any[] = [];
 
-        if (profileData.displayName !== undefined) {
-            updates.push('display_name = ?');
-            params.push(profileData.displayName);
-        }
-        if (profileData.bio !== undefined) {
-            updates.push('bio = ?');
-            params.push(profileData.bio);
-        }
-        if (profileData.avatarUrl !== undefined) {
-            updates.push('avatar_url = ?');
-            params.push(profileData.avatarUrl);
-        }
+            if (profileData.displayName !== undefined) {
+                updates.push('display_name = ?');
+                params.push(profileData.displayName);
+            }
+            if (profileData.bio !== undefined) {
+                updates.push('bio = ?');
+                params.push(profileData.bio);
+            }
+            if (profileData.avatarUrl !== undefined) {
+                updates.push('avatar_url = ?');
+                params.push(profileData.avatarUrl);
+            }
 
-        if (updates.length === 0) return;
+            if (updates.length === 0) return;
 
-        params.push(userId);
-        await this.db
-            .prepare(`UPDATE profiles SET ${updates.join(', ')} WHERE user_id = ?`)
-            .bind(...params)
-            .run();
+            params.push(userId);
+            const result = await this.db
+                .prepare(`UPDATE profiles SET ${updates.join(', ')} WHERE user_id = ?`)
+                .bind(...params)
+                .run();
 
-        // Handle links separately if provided
-        if (profileData.links) {
-            // For now, we'll store links in a simple format
-            // In a production app, you'd have a separate links table
+            console.log('Profile update result:', result);
+
+            // Handle links separately if provided
+            if (profileData.links) {
+                // Store links as JSON in a separate column (for now, we'll skip this)
+                // In production, create a separate 'links' table
+                console.log('Links update requested but not implemented yet:', profileData.links);
+            }
+        } catch (error) {
+            console.error('Error updating profile:', error);
+            throw error;
         }
     }
 
