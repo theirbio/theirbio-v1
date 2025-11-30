@@ -27,40 +27,55 @@ export function Layout() {
             try {
                 // Decode token to get username (simple base64 decode of payload)
                 // Fix: Handle Base64URL encoding by replacing - with + and _ with /
-                login(data.data, token);
-                toast.success(`Welcome back, ${data.data.displayName || username}!`);
-                navigate('/dashboard');
-            } else {
-                toast.error('Failed to load user profile');
+                const base64Url = token.split('.')[1];
+                const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+                // Add padding if needed
+                const pad = base64.length % 4;
+                const paddedBase64 = pad ? base64 + '='.repeat(4 - pad) : base64;
+
+                const payload = JSON.parse(atob(paddedBase64));
+                // The payload is flat: { username, id, ... }
+                const username = payload.username;
+
+                // Fetch user profile
+                fetch(`${config.apiBaseUrl}/users/${username}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.success) {
+                            login(data.data, token);
+                            toast.success(`Welcome back, ${data.data.displayName || username}!`);
+                            navigate('/dashboard');
+                        } else {
+                            toast.error('Failed to load user profile');
+                            navigate('/auth');
+                        }
+                    })
+                    .catch(err => {
+                        console.error(err);
+                        toast.error('Failed to login');
+                        navigate('/auth');
+                    });
+            } catch (e) {
+                console.error('Invalid token', e);
+                toast.error('Invalid authentication token');
                 navigate('/auth');
+            } finally {
+                // Clear token from URL after processing
+                setSearchParams({});
             }
-        })
-        .catch(err => {
-            console.error(err);
-            toast.error('Failed to login');
-            navigate('/auth');
-        });
-} catch (e) {
-    console.error('Invalid token', e);
-    toast.error('Invalid authentication token');
-    navigate('/auth');
-} finally {
-    // Clear token from URL after processing
-    setSearchParams({});
-}
         }
     }, [searchParams, login, navigate, setSearchParams]);
 
-return (
-    <div className="flex flex-col min-h-screen bg-background text-foreground">
-        <Header />
-        <main className="flex-grow">
-            <div className="max-w-7xl mx-auto py-16 sm:py-24 px-4 sm:px-6 lg:px-8">
-                <Outlet />
-            </div>
-        </main>
-        <Footer />
-        <Toaster richColors position="top-right" />
-    </div>
-);
+    return (
+        <div className="flex flex-col min-h-screen bg-background text-foreground">
+            <Header />
+            <main className="flex-grow">
+                <div className="max-w-7xl mx-auto py-16 sm:py-24 px-4 sm:px-6 lg:px-8">
+                    <Outlet />
+                </div>
+            </main>
+            <Footer />
+            <Toaster richColors position="top-right" />
+        </div>
+    );
 }
