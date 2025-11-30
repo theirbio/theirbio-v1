@@ -1,4 +1,6 @@
 import { ApiResponse } from "../../shared/types"
+import { useAuthStore } from '@/stores/authStore';
+
 export class ApiError extends Error {
   status: number;
   errorData: any;
@@ -9,6 +11,7 @@ export class ApiError extends Error {
     this.errorData = errorData;
   }
 }
+
 function parseError(error: any): string {
   if (typeof error === 'string') {
     return error;
@@ -23,12 +26,20 @@ function parseError(error: any): string {
   }
   return 'An unknown error occurred. Please try again.';
 }
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
+
+  const token = useAuthStore.getState().token;
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const res = await fetch(path, { ...init, headers });
+
   if (!res.ok) {
     let errorJson: any;
     try {
@@ -39,9 +50,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const errorMessage = parseError(errorJson.error || errorJson);
     throw new ApiError(errorMessage, res.status, errorJson.error || errorJson);
   }
+
   if (res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as T;
   }
+
   const json: ApiResponse<T> = await res.json();
   if (json.success === false) {
     const errorMessage = parseError(json.error);

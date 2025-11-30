@@ -7,41 +7,45 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Info } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { useAuthStore } from '@/stores/authStore';
 import { useProfileStore } from '@/stores/profileStore';
 import { toast } from 'sonner';
 import type { User } from '@shared/types';
+
 const signupSchema = z.object({
   username: z.string().min(3, "Username must be at least 3 characters").max(20),
   password: z.string().min(8, "Password must be at least 8 characters"),
   accountType: z.enum(['person', 'company']),
 });
+
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
 });
+
 type SignupFormValues = z.infer<typeof signupSchema>;
 type LoginFormValues = z.infer<typeof loginSchema>;
+
 export function AuthPage() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const { invalidateProfiles } = useProfileStore();
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   const signupForm = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
     defaultValues: { username: '', password: '', accountType: 'person' },
   });
+
   const loginForm = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { username: '', password: '' },
   });
+
   const onSignupSubmit = async (values: SignupFormValues) => {
     setIsSubmitting(true);
     try {
@@ -50,7 +54,7 @@ export function AuthPage() {
         body: JSON.stringify(values),
       });
       login(user, token);
-      invalidateProfiles(); // Invalidate cache to include new user on homepage
+      invalidateProfiles();
       toast.success(`Welcome, ${user.displayName}!`, {
         description: "You're all set up. Let's customize your profile!",
         action: {
@@ -65,6 +69,7 @@ export function AuthPage() {
       setIsSubmitting(false);
     }
   };
+
   const onLoginSubmit = async (values: LoginFormValues) => {
     setIsSubmitting(true);
     try {
@@ -81,8 +86,30 @@ export function AuthPage() {
       setIsSubmitting(false);
     }
   };
+
+  const GoogleButton = () => (
+    <div className="mt-4">
+      <div className="relative mb-4">
+        <div className="absolute inset-0 flex items-center">
+          <span className="w-full border-t" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">
+            Or continue with
+          </span>
+        </div>
+      </div>
+      <Button variant="outline" type="button" disabled className="w-full">
+        <svg className="mr-2 h-4 w-4" aria-hidden="true" focusable="false" data-prefix="fab" data-icon="google" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512">
+          <path fill="currentColor" d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h236.1c2.3 12.7 3.9 24.9 3.9 41.4z"></path>
+        </svg>
+        Google (Coming Soon)
+      </Button>
+    </div>
+  );
+
   return (
-    <div className="flex items-center justify-center">
+    <div className="flex items-center justify-center min-h-[80vh]">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -90,10 +117,11 @@ export function AuthPage() {
         className="w-full max-w-md"
       >
         <Tabs defaultValue="signup" className="w-full">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-2 mb-4">
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
             <TabsTrigger value="login">Login</TabsTrigger>
           </TabsList>
+
           <TabsContent value="signup">
             <Card>
               <CardHeader>
@@ -101,13 +129,6 @@ export function AuthPage() {
                 <CardDescription>Join theirBio to create your personal page.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Alert className="mb-6">
-                  <Info className="h-4 w-4" />
-                  <AlertTitle>Demo Platform</AlertTitle>
-                  <AlertDescription>
-                    This is a public demo. Please use a mock username and password. Do not use real credentials.
-                  </AlertDescription>
-                </Alert>
                 <Form {...signupForm}>
                   <form onSubmit={signupForm.handleSubmit(onSignupSubmit)} className="space-y-4">
                     <FormField
@@ -171,9 +192,11 @@ export function AuthPage() {
                     </Button>
                   </form>
                 </Form>
+                <GoogleButton />
               </CardContent>
             </Card>
           </TabsContent>
+
           <TabsContent value="login">
             <Card>
               <CardHeader>
@@ -181,13 +204,6 @@ export function AuthPage() {
                 <CardDescription>Log in to manage your profile.</CardDescription>
               </CardHeader>
               <CardContent>
-                <Alert className="mb-6">
-                  <Info className="h-4 w-4" />
-                  <AlertTitle>Demo Platform</AlertTitle>
-                  <AlertDescription>
-                    This is a public demo. Please use the mock credentials you created.
-                  </AlertDescription>
-                </Alert>
                 <Form {...loginForm}>
                   <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
                     <FormField
@@ -221,6 +237,7 @@ export function AuthPage() {
                     </Button>
                   </form>
                 </Form>
+                <GoogleButton />
               </CardContent>
             </Card>
           </TabsContent>

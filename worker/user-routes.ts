@@ -5,11 +5,23 @@ import { ok, bad, notFound, isStr } from './core-utils';
 import type { Profile, User, Experience } from "@shared/types";
 import { bearerAuth } from 'hono/bearer-auth';
 import { D1UserStore } from './db';
+import { generateToken, verifyToken as verifyJwt } from './auth';
+import { hashPassword, verifyPassword } from './password';
+import { log } from './logger';
 
 // Schemas
+const reservedUsernames = ['admin', 'root', 'api', 'dashboard', 'auth', 'login', 'signup', 'seals', 'profile', 'settings'];
+
 const signupSchema = z.object({
-  username: z.string().min(3, "Username must be at least 3 characters").max(20, "Username must be at most 20 characters").regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
+  username: z.string()
+    .min(3, "Username must be at least 3 characters")
+    .max(20, "Username must be at most 20 characters")
+    .regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores")
+    .refine(u => !reservedUsernames.includes(u.toLowerCase()), "Username is reserved"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[0-9]/, "Password must contain at least one number"),
   accountType: z.enum(['person', 'company', 'institution']),
 });
 
@@ -38,18 +50,21 @@ const sealBioSchema = z.object({
 });
 
 // Types
-type JWTPayload = { user: { username: string; }; };
+type JWTPayload = { user: { username: string; id: string } };
 type AuthContext = Context<{ Bindings: Env; Variables: { jwtPayload: JWTPayload } }>;
 
 // Middleware & Helpers
-const verifyToken = async (token: string, c: Context<{ Bindings: Env }>) => {
-  if (token.startsWith('mock-jwt-for-')) {
-    const username = token.replace('mock-jwt-for-', '').trim();
-    const userStore = new D1UserStore(c.env.DB);
-    const user = await userStore.findByUsername(username);
-    if (user) {
-      return { user: { username } } as any;
-    }
+const verifyToken = async (token: string, c: Context<{ Bindings: Env; Variables: { jwtPayload: JWTPayload } }>) => {
+  const secret = c.env.JWT_SECRET;
+  if (!secret) {
+    log.error("JWT_SECRET is not set!");
+    return false;
+  }
+
+  const payload = await verifyJwt(token, secret);
+  if (payload && payload.username && payload.id) {
+    c.set('jwtPayload', { user: { username: payload.username, id: payload.id } });
+    return true;
   }
   return false;
 };
@@ -74,11 +89,12 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const existingUser = await userStore.findByUsername(username);
     if (existingUser) return bad(c, 'Username already taken');
 
-    const passwordHash = `hashed_${password}`;
+    const passwordHash = await hashPassword(password);
     const avatarIcon = accountType === 'company' ? 'icons' : 'lorelei';
+    const userId = crypto.randomUUID();
 
     const newUser: Omit<User, 'experiences'> = {
-      id: crypto.randomUUID(),
+      id: userId,
       username,
       passwordHash,
       displayName: username,
@@ -89,7 +105,14 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     };
 
     await userStore.create(newUser);
-    const token = `mock-jwt-for-${username}`;
+
+    if (!c.env.JWT_SECRET) {
+      log.error("JWT_SECRET missing during signup");
+      return c.json({ success: false, error: "Server configuration error" }, 500);
+    }
+
+    const token = await generateToken({ username, id: userId }, c.env.JWT_SECRET);
+    log.info(`New user signed up: ${username} (${accountType})`);
     return ok(c, { user: { ...newUser, experiences: [] }, token });
   });
 
@@ -105,10 +128,27 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const user = await userStore.findByUsername(username);
     if (!user) return notFound(c, 'User not found');
 
-    const mockHashedPassword = `hashed_${password}`;
-    if (user.passwordHash !== mockHashedPassword) return bad(c, 'Invalid credentials');
+    // Verify password (support both legacy mock hash and new real hash)
+    let isValid = false;
+    if (user.passwordHash.startsWith('hashed_')) {
+      // Legacy mock hash check
+      isValid = user.passwordHash === `hashed_${password}`;
+    } else {
+      // Real hash check
+      isValid = await verifyPassword(password, user.passwordHash);
+    }
 
-    const token = `mock-jwt-for-${username}`;
+    if (!isValid) {
+      log.warn(`Failed login attempt for user: ${username}`);
+      return bad(c, 'Invalid credentials');
+    }
+
+    if (!c.env.JWT_SECRET) {
+      log.error("JWT_SECRET missing during login");
+      return c.json({ success: false, error: "Server configuration error" }, 500);
+    }
+
+    const token = await generateToken({ username, id: user.id }, c.env.JWT_SECRET);
     return ok(c, { user, token });
   });
 
@@ -175,6 +215,7 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     await userStore.updateProfile(user.id, profileData);
     const updatedUser = await userStore.findByUsername(username);
 
+    log.info(`Profile updated for user: ${username}`);
     return ok(c, updatedUser);
   });
 
@@ -191,33 +232,42 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
     const deleted = await userStore.delete(user.id);
     if (!deleted) return notFound(c, 'User not found or already deleted.');
 
+    log.info(`Account deleted: ${username}`);
     return ok(c, { message: 'Account deleted successfully' });
   });
 
   authApp.route('/profile', profileRoutes);
 
-  // Seal Bio Management (Now public for demo)
-  const sealRoutes = new Hono<{ Bindings: Env }>();
+  // Authenticated Seal Requests
+  const sealRoutes = new Hono<{ Bindings: Env; Variables: { jwtPayload: JWTPayload } }>();
 
-  sealRoutes.post('/', async (c) => {
-    // Authentication removed for demo mode
+  sealRoutes.post('/request', async (c) => {
+    const payload = c.get('jwtPayload');
+    if (!payload) return c.json({ success: false, error: { code: 'UNAUTHORIZED' } }, 401);
+
     const body = await c.req.json();
     const result = sealBioSchema.safeParse(body);
     if (!result.success) return handleValidationFailure(c, result.error);
 
     const { personHandle, role, period, description } = result.data;
+    const requesterUsername = payload.user.username;
 
     const userStore = new D1UserStore(c.env.DB);
-    const personUser = await userStore.findByUsername(personHandle);
-    if (!personUser) {
-      return notFound(c, 'Target user profile not found.');
+    const requester = await userStore.findByUsername(requesterUsername);
+
+    // Only companies can seal (for now)
+    if (!requester || requester.accountType !== 'company') {
+      return bad(c, 'Only company accounts can issue seals.');
     }
+
+    const personUser = await userStore.findByUsername(personHandle);
+    if (!personUser) return notFound(c, 'Target user profile not found.');
 
     if (personUser.accountType !== 'person') {
       return bad(c, 'Bios can only be sealed for personal accounts.');
     }
 
-    // Insert experience directly into D1
+    // Create pending seal (is_verified = 0)
     const experienceId = crypto.randomUUID();
     await c.env.DB.prepare(`
       INSERT INTO experiences (id, user_id, role, organization_name, period, description, is_verified, sealed_by_user_id, sealed_at)
@@ -226,29 +276,19 @@ export function userRoutes(app: Hono<{ Bindings: Env }>) {
       experienceId,
       personUser.id,
       role,
-      'Demo Company',
+      requester.displayName || requester.username,
       period,
       description || '',
-      1, // is_verified
-      'demo_company',
+      0, // is_verified = 0 (Pending)
+      requester.id,
       Math.floor(Date.now() / 1000)
     ).run();
 
-    const newExperience: Experience = {
-      role,
-      period,
-      description: description || '',
-      sealedByOrgId: 'demo_company',
-      sealedByOrgName: 'Demo Company',
-      sealedByOrgAvatarUrl: `https://api.dicebear.com/8.x/icons/svg?seed=demo`,
-      sealedAt: new Date().toISOString(),
-    };
-
-    return c.json({ success: true, data: newExperience }, 201);
+    log.info(`Seal requested by ${requesterUsername} for ${personHandle}`);
+    return ok(c, { message: 'Seal request sent successfully' });
   });
 
-  // This route is now attached to the main app to be public
-  app.route('/api/seals', sealRoutes);
+  authApp.route('/seals', sealRoutes);
 
   // Mount the auth-required routes
   app.route('/api', authApp);

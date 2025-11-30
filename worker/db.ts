@@ -21,7 +21,38 @@ export class D1UserStore {
             .bind(userRow.id)
             .all();
 
-        return this.mapToUser(userRow, profileRow, experiencesRows.results || []);
+        const linksRows = await this.db
+            .prepare(`SELECT * FROM links WHERE user_id = ?`)
+            .bind(userRow.id)
+            .all();
+
+        return this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []);
+    }
+
+    async findByEmail(email: string): Promise<User | null> {
+        const userRow = await this.db
+            .prepare(`SELECT * FROM users WHERE email = ?`)
+            .bind(email)
+            .first();
+
+        if (!userRow) return null;
+
+        const profileRow = await this.db
+            .prepare(`SELECT * FROM profiles WHERE user_id = ?`)
+            .bind(userRow.id)
+            .first();
+
+        const experiencesRows = await this.db
+            .prepare(`SELECT * FROM experiences WHERE user_id = ? AND is_verified = 1`)
+            .bind(userRow.id)
+            .all();
+
+        const linksRows = await this.db
+            .prepare(`SELECT * FROM links WHERE user_id = ?`)
+            .bind(userRow.id)
+            .all();
+
+        return this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []);
     }
 
     async findById(id: string): Promise<User | null> {
@@ -42,20 +73,26 @@ export class D1UserStore {
             .bind(userRow.id)
             .all();
 
-        return this.mapToUser(userRow, profileRow, experiencesRows.results || []);
+        const linksRows = await this.db
+            .prepare(`SELECT * FROM links WHERE user_id = ?`)
+            .bind(userRow.id)
+            .all();
+
+        return this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []);
     }
 
-    async create(user: Omit<User, 'experiences'>, email?: string): Promise<void> {
+    async create(user: Omit<User, 'experiences'>): Promise<void> {
         // Insert user
         await this.db
             .prepare(`
-        INSERT INTO users (id, username, email, password_hash, account_type, credits, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO users (id, username, email, google_id, password_hash, account_type, credits, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `)
             .bind(
                 user.id,
                 user.username,
-                email || `${user.username}@placeholder.com`,
+                user.email || null,
+                user.googleId || null,
                 user.passwordHash,
                 user.accountType,
                 0,
@@ -97,7 +134,12 @@ export class D1UserStore {
                 .bind(userRow.id)
                 .all();
 
-            users.push(this.mapToUser(userRow, profileRow, experiencesRows.results || []));
+            const linksRows = await this.db
+                .prepare(`SELECT * FROM links WHERE user_id = ?`)
+                .bind(userRow.id)
+                .all();
+
+            users.push(this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []));
         }
 
         return users;
@@ -133,14 +175,44 @@ export class D1UserStore {
 
             // Handle links separately if provided
             if (profileData.links) {
-                // Store links as JSON in a separate column (for now, we'll skip this)
-                // In production, create a separate 'links' table
-                console.log('Links update requested but not implemented yet:', profileData.links);
+                await this.updateLinks(userId, profileData.links);
             }
         } catch (error) {
             console.error('Error updating profile:', error);
             throw error;
         }
+    }
+
+    async updateLinks(userId: string, links: any): Promise<void> {
+        // Delete existing social links (we'll identify them by icon for now, or just wipe all for this user since we only support these 4)
+        // For now, let's wipe all links for the user to keep it simple and consistent with the fixed SocialLinks type
+        await this.db.prepare('DELETE FROM links WHERE user_id = ?').bind(userId).run();
+
+        const linkItems = [
+            { key: 'twitter', url: links.twitter, title: 'Twitter' },
+            { key: 'github', url: links.github, title: 'GitHub' },
+            { key: 'website', url: links.website, title: 'Website' },
+            { key: 'linkedin', url: links.linkedin, title: 'LinkedIn' },
+        ].filter(item => item.url);
+
+        if (linkItems.length === 0) return;
+
+        const stmt = this.db.prepare(`
+            INSERT INTO links (id, user_id, title, url, icon, sort_order, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        const batch = linkItems.map((item, index) => stmt.bind(
+            crypto.randomUUID(),
+            userId,
+            item.title,
+            item.url,
+            item.key,
+            index,
+            Math.floor(Date.now() / 1000)
+        ));
+
+        await this.db.batch(batch);
     }
 
     async delete(userId: string): Promise<boolean> {
@@ -152,16 +224,25 @@ export class D1UserStore {
         return result.meta.changes > 0;
     }
 
-    private mapToUser(userRow: any, profileRow: any, experiencesRows: any[]): User {
+    private mapToUser(userRow: any, profileRow: any, experiencesRows: any[], linksRows: any[] = []): User {
+        const links: any = {};
+        linksRows.forEach((link: any) => {
+            if (['twitter', 'github', 'website', 'linkedin'].includes(link.icon)) {
+                links[link.icon] = link.url;
+            }
+        });
+
         return {
             id: userRow.id,
             username: userRow.username,
+            email: userRow.email || undefined,
+            googleId: userRow.google_id || undefined,
             passwordHash: userRow.password_hash,
             displayName: profileRow?.display_name || userRow.username,
             bio: profileRow?.bio || '',
             avatarUrl: profileRow?.avatar_url || '',
-            links: {}, // TODO: Implement links storage
-            accountType: userRow.account_type as 'person' | 'company',
+            links: links,
+            accountType: userRow.account_type as 'person' | 'company' | 'institution',
             experiences: experiencesRows.map((exp: any) => ({
                 role: exp.role,
                 period: exp.period,
