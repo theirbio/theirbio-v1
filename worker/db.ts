@@ -55,6 +55,33 @@ export class D1UserStore {
         return this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []);
     }
 
+    async findByGoogleId(googleId: string): Promise<User | null> {
+        const userRow = await this.db
+            .prepare(`SELECT * FROM users WHERE google_id = ?`)
+            .bind(googleId)
+            .first();
+
+        if (!userRow) return null;
+
+        const profileRow = await this.db
+            .prepare(`SELECT * FROM profiles WHERE user_id = ?`)
+            .bind(userRow.id)
+            .first();
+
+        const experiencesRows = await this.db
+            .prepare(`SELECT * FROM experiences WHERE user_id = ? AND is_verified = 1`)
+            .bind(userRow.id)
+            .all();
+
+        const linksRows = await this.db
+            .prepare(`SELECT * FROM links WHERE user_id = ?`)
+            .bind(userRow.id)
+            .all();
+
+        return this.mapToUser(userRow, profileRow, experiencesRows.results || [], linksRows.results || []);
+    }
+
+
     async findById(id: string): Promise<User | null> {
         const userRow = await this.db
             .prepare(`SELECT * FROM users WHERE id = ?`)

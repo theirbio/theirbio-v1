@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { userRoutes } from './user-routes';
+import { authRoutes } from './auth-routes';
 import { Env, GlobalDurableObject } from './core-utils';
 import { log } from './logger';
 import { errorHandler } from './errors';
@@ -46,6 +47,7 @@ app.use('/api/*', async (c, next) => {
 });
 
 userRoutes(app);
+authRoutes(app);
 
 app.get('/api/health', (c) => c.json({ success: true, data: { status: 'healthy', timestamp: new Date().toISOString() } }));
 
@@ -64,6 +66,6 @@ app.post('/api/client-errors', async (c) => {
 app.notFound((c) => c.json({ success: false, error: 'Not Found' }, 404));
 app.onError(errorHandler);
 
-console.log(`Server is running`)
+console.log('Server is running')
 
 export default { fetch: app.fetch } satisfies ExportedHandler<Env>;
