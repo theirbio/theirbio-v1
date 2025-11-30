@@ -29,7 +29,11 @@ export function Layout() {
         // Fix: Handle Base64URL encoding by replacing - with + and _ with /
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        const payload = JSON.parse(atob(base64));
+        // Add padding if needed
+        const pad = base64.length % 4;
+        const paddedBase64 = pad ? base64 + '='.repeat(4 - pad) : base64;
+
+        const payload = JSON.parse(atob(paddedBase64));
         const username = payload.user.username;
 
         // Fetch user profile
