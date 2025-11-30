@@ -4,7 +4,7 @@
  */
 {
     "$schema": "node_modules/wrangler/config-schema.json",
-    "name": "theirbiov2",
+    "name": "their-bio",
     "main": "worker/index.ts",
     "compatibility_date": "2025-04-24",
     "assets": {
