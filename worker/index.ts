@@ -29,7 +29,8 @@ const app = new Hono<{ Bindings: Env }>();
 
 app.use('*', logger());
 
-app.use('/api/*', async (c, next) => {
+// Apply CORS to all routes (including /auth/*)
+app.use('*', async (c, next) => {
   const allowedOrigins = c.env.ALLOWED_ORIGINS?.split(',') || [];
   // Fallback for local dev if not set
   if (allowedOrigins.length === 0) allowedOrigins.push('http://localhost:3000');
