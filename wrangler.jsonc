@@ -44,7 +44,6 @@
     ],
     "vars": {
         "ENVIRONMENT": "production",
-        "ALLOWED_ORIGINS": "https://their.bio,http://localhost:5173",
-        "GOOGLE_CLIENT_ID": "placeholder_client_id"
+        "ALLOWED_ORIGINS": "https://their.bio,http://localhost:5173"
     }
 }
