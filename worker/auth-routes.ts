@@ -9,7 +9,7 @@ export const authRoutes = (app: Hono<{ Bindings: Env }>) => {
     const auth = new Hono<{ Bindings: Env }>();
 
     // Initiate Google OAuth flow
-    auth.get('/google', (c) => {
+    auth.get('google', (c) => {
         const clientId = c.env.GOOGLE_CLIENT_ID;
         const redirectUri = `${new URL(c.req.url).origin}/auth/google/callback`;
 
@@ -25,7 +25,7 @@ export const authRoutes = (app: Hono<{ Bindings: Env }>) => {
     });
 
     // Handle Google OAuth callback
-    auth.get('/google/callback', async (c) => {
+    auth.get('google/callback', async (c) => {
         const code = c.req.query('code');
         const error = c.req.query('error');
 
