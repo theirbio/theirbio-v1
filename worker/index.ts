@@ -1,4 +1,5 @@
 // Making changes to this file is **STRICTLY** forbidden. Please add your routes in `userRoutes.ts` file.
+// Deployment trigger: Google OAuth routes enabled
 
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
