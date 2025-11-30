@@ -23,17 +23,23 @@ export function Layout() {
       return;
     }
 
-    if (token) {
+    // Helper to safely parse JWT
+    const parseJwt = (token: string) => {
       try {
-        // Decode token to get username (simple base64 decode of payload)
-        // Fix: Handle Base64URL encoding by replacing - with + and _ with /
         const base64Url = token.split('.')[1];
         const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
-        // Add padding if needed
-        const pad = base64.length % 4;
-        const paddedBase64 = pad ? base64 + '='.repeat(4 - pad) : base64;
+        const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function (c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+        }).join(''));
+        return JSON.parse(jsonPayload);
+      } catch (e) {
+        throw new Error('Failed to parse JWT');
+      }
+    };
 
-        const payload = JSON.parse(atob(paddedBase64));
+    if (token) {
+      try {
+        const payload = parseJwt(token);
         const username = payload.user.username;
 
         // Fetch user profile
