@@ -48,8 +48,11 @@ app.use('*', async (c, next) => {
   return corsMiddleware(c, next);
 });
 
-userRoutes(app);
+// Register routes - ORDER MATTERS!
+app.get('/test-debug', (c) => c.text('Debug route works!'));
+
 authRoutes(app);
+userRoutes(app);
 
 app.get('/api/health', (c) => c.json({ success: true, data: { status: 'healthy', timestamp: new Date().toISOString() } }));
 
