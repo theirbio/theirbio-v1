@@ -26,7 +26,10 @@ export function Layout() {
     if (token) {
       try {
         // Decode token to get username (simple base64 decode of payload)
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        // Fix: Handle Base64URL encoding by replacing - with + and _ with /
+        const base64Url = token.split('.')[1];
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const payload = JSON.parse(atob(base64));
         const username = payload.user.username;
 
         // Fetch user profile
